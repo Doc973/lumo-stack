@@ -1,0 +1,97 @@
+# docker-compose.yml  (Compose v2 – senza la chiave version:)
+services:
+  tts_service:
+    image: lumo/tts_service:1.0.0
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    volumes:
+      - /srv/tts_archive:/app/outputs/tts
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/healthz"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 5
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
+  whisper:
+    build:
+      context: ../whisper_fastapi      # percorso relativo al compose file
+      dockerfile: Dockerfile
+    image: whisper_fastapi:1.0.0
+    container_name: whisper_fastapi
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - LOG_LEVEL=info
+    volumes:
+      - /home/doc:/host_home
+    networks:
+      - backend
+
+  
+  # -----------------------------------------------------------------
+  # Servizio di cattura e trascrizione vocale
+  # -----------------------------------------------------------------
+  voice_capture:
+    build:
+      context: ./voice_capture          # cartella che contiene Dockerfile + listen.py
+      dockerfile: Dockerfile            # nome del Dockerfile (esplicito)
+    container_name: voice_capture
+    restart: unless-stopped
+    ports:
+      - "8500:8500"
+    volumes:
+      - /srv/voice_tmp:/voice_tmp           # dove verrà scritto transcript.txt
+      - ./voice_capture/model:/app/model     # modello Vosk (già scaricato)
+    environment:
+      - PYTHONUNBUFFERED=1
+    privileged: true
+    devices:
+      - /dev/snd:/dev/snd                    # passa il microfono al container
+    networks:
+      - backend
+
+  # -----------------------------------------------------------------
+  # NGINX – reverse‑proxy
+  # -----------------------------------------------------------------
+  nginx:
+    image: nginx:stable-alpine
+    container_name: nginx_proxy
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - whisper
+      - voice_capture
+      - tts_service
+    restart: unless-stopped
+    networks:
+      - backend
+
+  # -----------------------------------------------------------------
+  # UI Lumo – (facoltativa, commentata per ora)
+  # -----------------------------------------------------------------
+  # lumo_ui:
+  #   image: protonmail/lumo_ui:latest
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8080:80"
+  #   environment:
+  #     - ENABLE_TTS=true
+  #   depends_on:
+  #     - tts_service
+  #   networks:
+  #     - backend
+
+networks:
+  backend:
+    driver: bridge

@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+# Inserisci qui la libreria TTS che usi, ad es.
+# pyttsx3  # (esempio, sostituisci con la tua)
+# oppure:
+# torchaudio, transformers, ecc.
